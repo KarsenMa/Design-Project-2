@@ -1,0 +1,80 @@
+#include <Wire.h>            // For I2C communication
+#include <SPI.h>             // For SPI communication, if needed
+#include <Adafruit_ICM20948.h> // ICM20948 library
+#include <SD.h>              // SD card library
+#include <Adafruit_GPS.h>    // Adafruit GPS library
+
+// Create an ICM20948 object
+Adafruit_ICM20948 icm;
+
+const int chipSelect = 10;   // SD card CS pin
+
+// GPS setup
+Adafruit_GPS GPS(&Wire);     // Using I2C for GPS
+#define GPSSerial Wire       // Define GPS communication via I2C
+
+void setup() {
+  Serial.begin(115200);      // Start serial communication with the Adalogger
+  
+  // Initialize SD card
+  if (!SD.begin(chipSelect)) {
+    Serial.println("SD card initialization failed!");
+    return;
+  }
+  
+  // Initialize ICM20948
+  if (!icm.begin_I2C()) {    // Use begin_SPI if connecting over SPI
+    Serial.println("Failed to find ICM20948 sensor!");
+    while (1);
+  }
+  Serial.println("ICM20948 Found!");
+
+  // Set up ICM20948 (configure as needed)
+  icm.setAccelRange(ICM20948_ACCEL_RANGE_2_G);
+  icm.setGyroRange(ICM20948_GYRO_RANGE_250_DPS);
+
+  // Initialize GPS
+  GPS.begin(0x10);           // Start GPS with I2C address (usually 0x10 or 0x42)
+  GPS.sendCommand(PMTK_SET_NMEA_OUTPUT_RMCGGA);  // Set output format
+  GPS.sendCommand(PMTK_SET_NMEA_UPDATE_1HZ);     // Update rate (1 Hz)
+}
+
+void loop() {
+  // Check for ICM20948 data
+  if (icm.accelAvailable() && icm.gyroAvailable()) {
+    icm.getAccel();
+    icm.getGyro();
+  }
+
+  // Check for GPS data
+  if (GPS.newNMEAreceived()) {
+    GPS.parse(GPS.lastNMEA()); // Parse the last NMEA sentence
+  }
+
+  // Open file to write data
+  File dataFile = SD.open("datalog.txt", FILE_WRITE);
+
+  // If file is available, write sensor data
+  if (dataFile) {
+    // Write IMU data
+    dataFile.print("Accel X: "); dataFile.print(icm.accelX); dataFile.print(" ");
+    dataFile.print("Accel Y: "); dataFile.print(icm.accelY); dataFile.print(" ");
+    dataFile.print("Accel Z: "); dataFile.print(icm.accelZ); dataFile.print(" ");
+    dataFile.print("Gyro X: "); dataFile.print(icm.gyroX); dataFile.print(" ");
+    dataFile.print("Gyro Y: "); dataFile.print(icm.gyroY); dataFile.print(" ");
+    dataFile.print("Gyro Z: "); dataFile.println(icm.gyroZ);
+
+    // Write GPS data
+    dataFile.print("Latitude: "); dataFile.print(GPS.latitude); dataFile.print(" ");
+    dataFile.print("Longitude: "); dataFile.print(GPS.longitude); dataFile.print(" ");
+    dataFile.print("Speed: "); dataFile.print(GPS.speed); dataFile.print(" ");
+    dataFile.print("Altitude: "); dataFile.print(GPS.altitude); dataFile.print(" ");
+    dataFile.print("Satellites: "); dataFile.print(GPS.satellites); dataFile.println();
+
+    dataFile.close();
+  } else {
+    Serial.println("Error opening datalog.txt");
+  }
+
+  delay(1000);  // Adjust sampling interval as needed
+}
